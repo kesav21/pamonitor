@@ -1,11 +1,10 @@
-.DEFAULT_GOAL := install
+target/release/pamonitor: Cargo.lock Cargo.toml src/main.rs
+	@cargo build --release
+
 .PHONY: install
 install: target/release/pamonitor
-	@cp target/release/pamonitor "$$XDG_BIN_DIR"
+	@cp $^ "$$XDG_BIN_DIR"
 
 .PHONY: clean
 clean:
 	@rm -r target
-
-target/release/pamonitor:
-	@cargo build --release
