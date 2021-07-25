@@ -23,7 +23,6 @@ use std::sync::mpsc::channel;
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::TryRecvError;
 
-#[derive(Debug)]
 struct CustomSinkInfo {
     index: u32,
     mute: bool,
@@ -41,7 +40,23 @@ impl Display for CustomSinkInfo {
     }
 }
 
-#[derive(Debug)]
+impl From<&SinkInfo<'_>> for CustomSinkInfo {
+    fn from(sink: &SinkInfo) -> Self {
+        let volume = (sink.volume.avg().0 as f64 / 65536.0 * 100.0).round() as i32;
+        let description = sink
+            .description
+            .as_ref()
+            .expect("No description")
+            .to_string();
+        Self {
+            index: sink.index,
+            mute: sink.mute,
+            volume,
+            description,
+        }
+    }
+}
+
 enum Message {
     NewSinkInfo(CustomSinkInfo),
     OldSinkInfo(CustomSinkInfo),
@@ -80,21 +95,6 @@ impl Display for Message {
     }
 }
 
-fn extract_sink_info(sink: &SinkInfo) -> CustomSinkInfo {
-    let volume = (sink.volume.avg().0 as f64 / 65536.0 * 100.0).round() as i32;
-    let description = sink
-        .description
-        .as_ref()
-        .expect("No description")
-        .to_string();
-    CustomSinkInfo {
-        index: sink.index,
-        mute: sink.mute,
-        volume,
-        description,
-    }
-}
-
 fn list_sinks(sender: Sender<Message>, introspector: &Introspector) {
     introspector.get_sink_info_list(move |result| match result {
         ListResult::Error => eprintln!("Error fetching sinks"),
@@ -102,7 +102,7 @@ fn list_sinks(sender: Sender<Message>, introspector: &Introspector) {
             .send(Message::NewestSink)
             .expect("Failed to report newest sink"),
         ListResult::Item(sink) => sender
-            .send(Message::NewSinkInfo(extract_sink_info(sink)))
+            .send(Message::NewSinkInfo(CustomSinkInfo::from(sink)))
             .expect("Failed to report new sink info"),
     });
 }
@@ -114,7 +114,7 @@ fn list_sinks_old(sender: Sender<Message>, introspector: &Introspector) {
             .send(Message::NewestSink)
             .expect("Failed to report newest sink"),
         ListResult::Item(sink) => sender
-            .send(Message::OldSinkInfo(extract_sink_info(sink)))
+            .send(Message::OldSinkInfo(CustomSinkInfo::from(sink)))
             .expect("Failed to report new sink info"),
     });
 }
@@ -126,7 +126,7 @@ fn get_sink_new(sender: Sender<Message>, introspector: &Introspector, index: u32
             .send(Message::NewestSink)
             .expect("Failed to report newest sink"),
         ListResult::Item(sink) => sender
-            .send(Message::NewSinkInfo(extract_sink_info(sink)))
+            .send(Message::NewSinkInfo(CustomSinkInfo::from(sink)))
             .expect("Failed to report new sink info"),
     });
 }
@@ -142,7 +142,7 @@ fn get_sink_change(
         ListResult::Error => eprintln!("Error fetching sink"),
         ListResult::End => {}
         ListResult::Item(new_sink) => {
-            let new_sink = extract_sink_info(new_sink);
+            let new_sink = CustomSinkInfo::from(new_sink);
             if sink_mute != new_sink.mute || sink_volume != new_sink.volume {
                 sender
                     .send(Message::ChangeVolume(new_sink))

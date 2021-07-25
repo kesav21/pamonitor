@@ -35,5 +35,3 @@ The daemon is responsible for the following:
 
 ## TODO
 
-- convert `extract_sink_info` to `CustomSinkInfo::from()`
-
