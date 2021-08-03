@@ -1,3 +1,8 @@
+use futures::executor::block_on;
+use futures::future::poll_fn as future_poll_fn;
+use futures::future::ready;
+use futures::stream::poll_fn as stream_poll_fn;
+use futures::stream::StreamExt;
 use pulse::callbacks::ListResult;
 use pulse::context::introspect::Introspector;
 use pulse::context::introspect::SinkInfo;
@@ -8,7 +13,6 @@ use pulse::context::Context;
 use pulse::context::FlagSet as ContextFlagSet;
 use pulse::context::State as ContextState;
 use pulse::def::Retval;
-use pulse::mainloop::standard::IterateResult;
 use pulse::mainloop::standard::Mainloop;
 use pulse::proplist::properties::APPLICATION_NAME;
 use pulse::proplist::Proplist;
@@ -21,7 +25,7 @@ use std::fs::write;
 use std::process::Command;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Sender;
-use std::sync::mpsc::TryRecvError;
+use std::task::Poll;
 
 struct CustomSinkInfo {
     index: u32,
@@ -321,57 +325,37 @@ fn main() {
         .connect(None, ContextFlagSet::NOFLAGS, None)
         .expect("Failed to connect context");
 
-    loop {
-        match mainloop.iterate(false) {
-            IterateResult::Quit(_) | IterateResult::Err(_) => {
-                eprintln!("Iterate state was not success, quitting...");
-                return;
-            }
-            IterateResult::Success(_) => {}
-        }
-        match context.get_state() {
-            ContextState::Failed | ContextState::Terminated => {
-                eprintln!("Context state failed/terminated, quitting...");
-                return;
-            }
-            ContextState::Unconnected
-            | ContextState::Connecting
-            | ContextState::Authorizing
-            | ContextState::SettingName => {}
-            ContextState::Ready => break,
-        }
-    }
+    block_on(
+        // TODO: use the same stream_poll_fn result in both places
+        stream_poll_fn(|_| Poll::Ready(Some(mainloop.iterate(false))))
+            .take_until(future_poll_fn(|_| match context.get_state() {
+                ContextState::Ready => Poll::Ready(()),
+                // TODO: handle these edge cases explicitly
+                _ => Poll::Pending,
+            }))
+            .collect::<Vec<_>>(),
+    );
 
     let (sender, receiver) = channel();
     let mut introspector = context.introspect();
     list_sinks(sender.clone(), &introspector);
     subscribe(sender.clone(), &mut context);
 
-    let mut newest_sink: Option<CustomSinkInfo> = None;
-    loop {
-        match mainloop.iterate(false) {
-            IterateResult::Quit(_) | IterateResult::Err(_) => {
-                eprintln!("Iterate state was not success, quitting...");
-                return;
-            }
-            IterateResult::Success(_) => {}
-        }
-        match receiver.try_recv() {
-            Err(err) => match err {
-                TryRecvError::Disconnected => {
-                    eprintln!("Sender disconnected");
-                    break;
-                }
-                TryRecvError::Empty => {}
-            },
-            Ok(message) => {
+    block_on(
+        stream_poll_fn(|_| Poll::Ready(Some(mainloop.iterate(false))))
+            .map(|_| receiver.try_recv())
+            .filter_map(|result| match result {
+                // TODO: handle these edge cases explicitly
+                Err(_) => ready(None),
+                Ok(message) => ready(Some(message)),
+            })
+            .fold(None, |newest_sink, message| {
                 match handle_message(sender.clone(), &mut introspector, message, &newest_sink) {
-                    None => {}
-                    Some(sink) => newest_sink = Some(sink),
+                    Some(sink) => ready(Some(sink)),
+                    None => ready(newest_sink),
                 }
-            }
-        }
-    }
+            }),
+    );
 
     // Clean shutdown, uncertain whether this is necessary
     mainloop.quit(Retval(0));

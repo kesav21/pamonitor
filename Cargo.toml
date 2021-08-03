@@ -7,3 +7,4 @@ edition = "2018"
 
 [dependencies]
 pulse = { version = "2.0", package = "libpulse-binding" }
+futures = "0.3.16"
