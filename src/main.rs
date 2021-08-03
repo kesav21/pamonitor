@@ -131,11 +131,7 @@ fn get_sink_new(sender: Sender<Message>, introspector: &Introspector, index: u32
     });
 }
 
-fn get_sink_change(
-    sender: Sender<Message>,
-    introspector: &Introspector,
-    sink: &CustomSinkInfo,
-) {
+fn get_sink_change(sender: Sender<Message>, introspector: &Introspector, sink: &CustomSinkInfo) {
     let sink_mute = sink.mute;
     let sink_volume = sink.volume;
     introspector.get_sink_info_by_index(sink.index, move |result| match result {
@@ -152,11 +148,7 @@ fn get_sink_change(
     });
 }
 
-fn list_sink_inputs(
-    sender: Sender<Message>,
-    introspector: &Introspector,
-    sink_index: u32,
-) {
+fn list_sink_inputs(sender: Sender<Message>, introspector: &Introspector, sink_index: u32) {
     introspector.get_sink_input_info_list(move |result| match result {
         ListResult::Error => eprintln!("Error fetch sink input"),
         ListResult::End => {}
@@ -166,11 +158,7 @@ fn list_sink_inputs(
     });
 }
 
-fn switch_sink_inputs(
-    introspector: &mut Introspector,
-    sink_input_index: u32,
-    sink_index: u32,
-) {
+fn switch_sink_inputs(introspector: &mut Introspector, sink_input_index: u32, sink_index: u32) {
     introspector.move_sink_input_by_index(
         sink_input_index,
         sink_index,
@@ -188,25 +176,23 @@ fn subscribe(sender: Sender<Message>, context: &mut Context) {
             eprintln!("Failed to subscribe to context")
         }
     });
-    context.set_subscribe_callback(Some(Box::new(
-        move |facility, operation, index| {
-            if let Facility::Sink = facility.expect("No facility given") {
-                match operation.expect("No operation given") {
-                    Operation::New => sender
-                        .send(Message::NewSinkIndex(index))
-                        .expect("Failed to report new sink"),
-                    Operation::Removed => sender
-                        .send(Message::RemoveSinkIndex(index))
-                        .expect("Failed to report removed sink"),
-                    Operation::Changed => {
-                        sender
-                            .send(Message::ChangeSinkIndex(index))
-                            .expect("Failed to report change in sink");
-                    }
+    context.set_subscribe_callback(Some(Box::new(move |facility, operation, index| {
+        if let Facility::Sink = facility.expect("No facility given") {
+            match operation.expect("No operation given") {
+                Operation::New => sender
+                    .send(Message::NewSinkIndex(index))
+                    .expect("Failed to report new sink"),
+                Operation::Removed => sender
+                    .send(Message::RemoveSinkIndex(index))
+                    .expect("Failed to report removed sink"),
+                Operation::Changed => {
+                    sender
+                        .send(Message::ChangeSinkIndex(index))
+                        .expect("Failed to report change in sink");
                 }
             }
-        },
-    )));
+        }
+    })));
 }
 
 /// TODO: use std::path::Path::new(path).exists()
@@ -217,12 +203,9 @@ fn write_data(index: u32, name: &str, value: &str) -> std::io::Result<()> {
 }
 
 fn write_sink(sink: &CustomSinkInfo) {
-    write_data(sink.index, "mute", &format!("{}", sink.mute))
-        .expect("Failed to write mute");
-    write_data(sink.index, "volume", &format!("{}", sink.volume))
-        .expect("Failed to write volume");
-    write_data(sink.index, "description", &sink.description)
-        .expect("Failed to write description");
+    write_data(sink.index, "mute", &format!("{}", sink.mute)).expect("Failed to write mute");
+    write_data(sink.index, "volume", &format!("{}", sink.volume)).expect("Failed to write volume");
+    write_data(sink.index, "description", &sink.description).expect("Failed to write description");
 }
 
 fn write_newest_sink(index: u32) {
@@ -233,8 +216,7 @@ fn write_newest_sink(index: u32) {
 
 fn delete_sink(index: u32) {
     let config = var("XDG_CACHE_HOME").expect("Cannot get XDG_CACHE_HOME");
-    remove_file(format!("{}/bin/pamonitor.{}.mute", config, index))
-        .expect("Failed to delete mute");
+    remove_file(format!("{}/bin/pamonitor.{}.mute", config, index)).expect("Failed to delete mute");
     remove_file(format!("{}/bin/pamonitor.{}.volume", config, index))
         .expect("Failed to delete volume");
     remove_file(format!("{}/bin/pamonitor.{}.description", config, index))
@@ -333,9 +315,8 @@ fn main() {
     proplist
         .set_str(APPLICATION_NAME, "PAMonitor")
         .expect("Failed to set application name");
-    let mut context =
-        Context::new_with_proplist(&mainloop, "PAMonitorContext", &proplist)
-            .expect("Failed to create new context");
+    let mut context = Context::new_with_proplist(&mainloop, "PAMonitorContext", &proplist)
+        .expect("Failed to create new context");
     context
         .connect(None, ContextFlagSet::NOFLAGS, None)
         .expect("Failed to connect context");
@@ -383,15 +364,12 @@ fn main() {
                 }
                 TryRecvError::Empty => {}
             },
-            Ok(message) => match handle_message(
-                sender.clone(),
-                &mut introspector,
-                message,
-                &newest_sink,
-            ) {
-                None => {}
-                Some(sink) => newest_sink = Some(sink),
-            },
+            Ok(message) => {
+                match handle_message(sender.clone(), &mut introspector, message, &newest_sink) {
+                    None => {}
+                    Some(sink) => newest_sink = Some(sink),
+                }
+            }
         }
     }
 
